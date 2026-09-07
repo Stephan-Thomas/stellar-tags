@@ -20,10 +20,14 @@ const {
   normalizeNameTag,
   validateMemo,
   RESERVED_NAMES,
+  RESERVED_USERNAMES,
   MAX_USERNAMES_PER_ADDRESS,
   PRIMARY_USERNAME_ORDER,
   shouldFallbackToLocalRegistry,
 } = require('../../utils');
+const Filter = require('bad-words');
+const profanityFilter = new Filter();
+const { verifyFreighterRegistrationSignature } = require('../../services/signatureService');
 const { validateSchema } = require('../../middleware/validateSchema');
 const { ApiError } = require('../../errors');
 const { requireJson } = require('../../middleware/requireJson');
@@ -143,6 +147,47 @@ const registerLocalUser = async ({ username, address }) => {
  *         description: Success
  */
 router.post('/register', requireJson, validateSchema({ body: registerBodySchema }), asyncHandler(async (req, res, next) => {
+  const safeUsername = xss(req.body.username);
+  const username = normalizeNameTag(safeUsername);
+  const { address, memo_type: memoType, memo, signature = '', signerAddress = '' } = req.body;
+
+  if (address.toUpperCase().startsWith('S')) {
+    return next(
+      new ApiError(
+        'INVALID_INPUT',
+        'Never share your Secret Key. Please register using your Public Key (starts with G).',
+      ),
+    );
+  }
+
+  const usernameLocalPart = username.includes('*') ? username.split('*')[0] : username;
+
+  if (profanityFilter.isProfane(usernameLocalPart)) {
+    return next(new ApiError('INVALID_INPUT', 'Username contains restricted words'));
+  }
+
+  if (!StrKey.isValidEd25519PublicKey(address)) {
+    const error = new Error('Invalid Stellar Public Key format.');
+    error.statusCode = 400;
+    return next(error);
+  }
+
+  const memoError = validateMemo(memoType, memo);
+  if (memoError) {
+    return next(new ApiError('INVALID_INPUT', memoError));
+  }
+
+  const normalizedUsername = username.toLowerCase();
+  
+  const normalizedLocalPart = normalizedUsername.includes('*') ? normalizedUsername.split('*')[0] : normalizedUsername;
+  if (RESERVED_USERNAMES.includes(normalizedLocalPart)) {
+    return res.status(403).json({ error: "Username is reserved." });
+  }
+
+  if (RESERVED_NAMES.includes(normalizedUsername)) {
+    return next(new ApiError('FORBIDDEN', 'This username is reserved and cannot be registered.'));
+  }
+
   try {
     // #613 — an address may carry several usernames (aliases). Registration
     // adds another while the address is under the cap; the first username
@@ -162,18 +207,53 @@ router.post('/register', requireJson, validateSchema({ body: registerBodySchema 
     const isPrimary = usernameCount === 0;
 
     let verificationResult = null;
-    const signerToVerify = signerAddress || address;
-    if (signerToVerify) {
-      verificationResult = await verifyMultiSignerThreshold(address, [signerToVerify], {
-        operationType: 'management',
-      });
+    if (signature) {
+      const isLegacyPublicKeyFlow =
+        StrKey.isValidEd25519PublicKey(signature) && !signerAddress;
 
-      if (!verificationResult.success) {
-        const verificationError = new Error(
-          verificationResult.errorMessage || 'Signature verification failed'
-        );
-        verificationError.statusCode = 401;
-        throw verificationError;
+      if (isLegacyPublicKeyFlow) {
+        verificationResult = await verifyMultiSignerThreshold(address, [signature], {
+          operationType: 'management',
+        });
+
+        if (!verificationResult.success) {
+          const verificationError = new Error(
+            verificationResult.errorMessage || 'Signature verification failed'
+          );
+          verificationError.statusCode = 401;
+          throw verificationError;
+        }
+      } else {
+        const claimedSigner = verifyFreighterRegistrationSignature({
+          username: req.body.username,
+          address: req.body.address,
+          signature,
+          signerAddress,
+        });
+
+        verificationResult = {
+          success: true,
+          accountId: claimedSigner,
+          operationType: 'message',
+          requiredThreshold: 1,
+          totalWeight: 1,
+          signatureCount: 1,
+          uniqueSignerCount: 1,
+          signatures: [
+            {
+              publicKey: claimedSigner,
+              weight: 1,
+              isValid: true,
+            },
+          ],
+          thresholds: {
+            low_threshold: 1,
+            med_threshold: 1,
+            high_threshold: 1,
+          },
+          signerCount: 1,
+          errorMessage: null,
+        };
       }
     }
 
@@ -226,10 +306,7 @@ router.post('/register', requireJson, validateSchema({ body: registerBodySchema 
       return next(error);
     }
 
-    logger.error('Registration error:', error.message);
-    const registrationError = new Error(`Registration verification failed: ${error.message}`, { cause: error });
-    registrationError.statusCode = 500;
-    return next(registrationError);
+    return next(error);
   }
 }));
 
@@ -415,7 +492,6 @@ router.get('/lookup', etagCache, validateSchema({ query: lookupQuerySchema }), a
 
       return res.json(result);
     } catch (error) {
-      console.warn('USER ROUTES ERROR:', error);
       const dbError = new Error('Database lookup failed', { cause: error });
       dbError.statusCode = 500;
       return next(dbError);

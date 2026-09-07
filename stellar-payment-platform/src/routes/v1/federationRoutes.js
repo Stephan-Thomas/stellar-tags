@@ -65,7 +65,6 @@ router.get('/federation', etagCache, validateSchema({ query: federationQuerySche
         );
       }
     } catch (error) {
-      console.log("FEDERATION LOOKUP ERROR:", error);
       if (error.statusCode === 403) {
         return next(error);
       }

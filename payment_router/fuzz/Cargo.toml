@@ -25,8 +25,3 @@ ethnum = { path = "../ethnum-patch" }
 
 [profile.release]
 debug = 1
-panic = "unwind"
-
-[profile.fuzz]
-inherits = "release"
-panic = "unwind"

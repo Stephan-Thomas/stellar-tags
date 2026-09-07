@@ -116,46 +116,41 @@ const lookupUser = async (address, search, query) => {
     ],
   };
 
-  try {
-    if (cursor) {
-      const candidates = await prisma.user.findMany({
-        where: { AND: [where, keysetWhereDesc(cursor)] },
+  if (cursor) {
+    const candidates = await prisma.user.findMany({
+      where: { AND: [where, keysetWhereDesc(cursor)] },
+      orderBy: [{ createdAt: 'desc' }, { username: 'desc' }],
+      take: cursorLimit + 1,
+    });
+    const { rows, hasMore, nextCursor } = paginateByKeyset(candidates, cursorLimit);
+    return cursorPaginatedResponse(
+      rows.map((user) => ({
+        username: user.username,
+        address: user.address,
+        created_at: user.createdAt.toISOString(),
+      })),
+      { limit: cursorLimit, nextCursor, hasMore },
+    );
+  } else {
+    const [totalCount, rows] = await prisma.$transaction([
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where,
         orderBy: [{ createdAt: 'desc' }, { username: 'desc' }],
-        take: cursorLimit + 1,
-      });
-      const { rows, hasMore, nextCursor } = paginateByKeyset(candidates, cursorLimit);
-      return cursorPaginatedResponse(
-        rows.map((user) => ({
-          username: user.username,
-          address: user.address,
-          created_at: user.createdAt.toISOString(),
-        })),
-        { limit: cursorLimit, nextCursor, hasMore },
-      );
-    } else {
-      const [totalCount, rows] = await prisma.$transaction([
-        prisma.user.count({ where }),
-        prisma.user.findMany({
-          where,
-          orderBy: [{ createdAt: 'desc' }, { username: 'desc' }],
-          skip,
-          take: limit,
-        }),
-      ]);
+        skip,
+        take: limit,
+      }),
+    ]);
 
-      return paginatedResponse(
-        rows.map((user) => ({
-          username: user.username,
-          address: user.address,
-          created_at: user.createdAt.toISOString(),
-        })),
-        totalCount,
-        { page, limit },
-      );
-    }
-  } catch (error) {
-    if (!shouldFallbackToLocalRegistry(error)) throw error;
-    return listLocalUsers(search, page, limit, cursor);
+    return paginatedResponse(
+      rows.map((user) => ({
+        username: user.username,
+        address: user.address,
+        created_at: user.createdAt.toISOString(),
+      })),
+      totalCount,
+      { page, limit },
+    );
   }
 };
 

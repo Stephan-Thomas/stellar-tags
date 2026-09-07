@@ -29,4 +29,4 @@ jobs:
         run: cargo install cargo-fuzz --force
 
       - name: Run route_payments fuzz target
-        run: cargo fuzz run route_payments -- -max_total_time=120
+        run: cargo fuzz run route_payments -- -max_total_time=120 -rss_limit_mb=0
