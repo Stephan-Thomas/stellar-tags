@@ -8,6 +8,16 @@ const MEMO_HASH_RE = /^[0-9a-fA-F]{64}$/;
 
 const RESERVED_NAMES = ['admin', 'root', 'support', 'system', 'stellar', 'api', 'help'];
 
+const RESERVED_USERNAMES = [
+  'admin',
+  'root',
+  'stellar',
+  'system',
+  'superuser',
+  'administrator',
+  'support',
+];
+
 // #613 — an address may carry at most this many federation usernames
 // (one primary plus up to four aliases).
 const MAX_USERNAMES_PER_ADDRESS = 5;
@@ -63,6 +73,7 @@ module.exports = {
   normalizeNameTag,
   validateMemo,
   RESERVED_NAMES,
+  RESERVED_USERNAMES,
   MAX_USERNAMES_PER_ADDRESS,
   PRIMARY_USERNAME_ORDER,
   VALID_MEMO_TYPES,

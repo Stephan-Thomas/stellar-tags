@@ -31,6 +31,10 @@ const {
   setMetricsSources,
 } = require('./src/metrics');
 const { validateSchema } = require('./src/middleware/validateSchema');
+const {
+  registerBodySchema,
+  federationQuerySchema,
+} = require('./src/schemas');
 const { buildErrorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 const { ApiError, errorBody } = require('./src/errors');
 const { requireJson } = require('./src/middleware/requireJson');
@@ -39,8 +43,31 @@ const { apiVersion } = require('./src/middleware/apiVersion');
 const { deprecationMiddleware } = require('./src/middleware/deprecation');
 const Sentry = require('@sentry/node');
 const {
-
+  ACTIVITY_ACTIONS,
+  recordActivity,
+} = require('./src/services/activityService');
+const {
+  lookupCached,
+  federationNameKey,
+  federationIdKey,
+  federationLookupCached,
+  invalidateFederationCache,
+} = require('./src/cache');
+const {
+  paginateByKeyset,
+  cursorPaginatedResponse,
+  paginatedResponse,
+} = require('./src/pagination');
+const { verifyMultiSignerThreshold } = require('./src/multisigner-verifier');
+const {
+  normalizeNameTag,
   validateMemo,
+  RESERVED_NAMES,
+  RESERVED_USERNAMES,
+  MAX_USERNAMES_PER_ADDRESS,
+  PRIMARY_USERNAME_ORDER,
+  USER_DATABASE,
+  shouldFallbackToLocalRegistry,
 } = require('./src/utils');
 const { getCachedApprovedOrigins } = require('./src/originCache');
 
